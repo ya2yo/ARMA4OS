@@ -1,0 +1,9 @@
+{
+  "environment_id": "COPY_FROM_MANIFEST",
+  "workload": "compression_smoke",
+  "profile": "cpu_contended",
+  "minimum_samples": 5,
+  "features": {"cpu.utilization": [0.7, 1.0], "cpu.pressure": [0.05, 1.0]},
+  "metric_mapping": {"wall_time_s": {"name": "app.completion_time", "unit": "s"}},
+  "switch_cost_s": {"default": 0.1, "scx_bpfland": 0.5, "scx_rusty": 0.5}
+}

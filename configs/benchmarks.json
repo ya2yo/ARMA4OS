@@ -1,0 +1,33 @@
+{
+  "$schema": "https://arma4os.org/schemas/benchmarks-v1.json",
+  "schema_version": 1,
+  "description": "ARMA4OS default batch smoke benchmark using deterministic compression",
+  "policies": [
+    "default"
+  ],
+  "timeout_sec": 30.0,
+  "warmup": 1,
+  "workloads": [
+    {
+      "name": "compression_smoke",
+      "command": [
+        "python3",
+        "-m",
+        "benchmarks.workloads.compression",
+        "--size-kb",
+        "1024",
+        "--iterations",
+        "3",
+        "--algorithm",
+        "zlib"
+      ],
+      "parser": "elapsed",
+      "timeout_sec": 30.0,
+      "warmup": 1,
+      "metadata": {
+        "description": "Deterministic multi-round zlib compression/decompression batch task",
+        "category": "batch_cpu"
+      }
+    }
+  ]
+}
