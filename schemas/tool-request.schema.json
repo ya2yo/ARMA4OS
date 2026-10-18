@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:arma4os:tool-request:1",
+  "title": "ARMA4OS Tool Request v1",
+  "type": "object",
+  "required": ["schema_version", "request_id", "scope", "timeout_ms", "tool", "params"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "request_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "scope": {"type": "string", "minLength": 1},
+    "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 120000},
+    "tool": {"type": "string", "minLength": 1},
+    "params": {"type": "object", "description": "Validated against the selected tool's input_schema"}
+  }
+}

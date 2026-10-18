@@ -1,0 +1,11 @@
+{
+  "max_age_ms": 5000,
+  "plan_ttl_ms": 3000,
+  "stable_windows": 3,
+  "cooldown_s": 20,
+  "minimum_residence_s": 15,
+  "vote_decay": 0.7,
+  "confidence_threshold": 0.8,
+  "monitor_cost_s": 0.01,
+  "failure_backoff_s": 60
+}

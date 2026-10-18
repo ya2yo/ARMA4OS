@@ -1,0 +1,15 @@
+{
+  "objective_id": "foreground-slo-background-progress",
+  "scope": "global",
+  "metric": "app.throughput",
+  "unit": "ops/s",
+  "direction": "maximize",
+  "expires_at_ms": 0,
+  "evaluation_window_s": 30,
+  "minimum_gain": 0.05,
+  "regression_fraction": 0.15,
+  "constraints": [
+    {"metric": "app.p99", "unit": "ms", "operator": "<=", "bound": 10},
+    {"metric": "app.background_progress", "unit": "items/s", "operator": ">=", "bound": 1}
+  ]
+}

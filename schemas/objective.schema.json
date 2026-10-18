@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:arma4os:objective:1",
+  "title": "ARMA4OS Objective",
+  "type": "object",
+  "required": ["objective_id", "scope", "metric", "unit", "direction", "expires_at_ms"],
+  "additionalProperties": false,
+  "properties": {
+    "objective_id": {"type": "string", "minLength": 1},
+    "scope": {"type": "string", "minLength": 1},
+    "metric": {"type": "string", "minLength": 1},
+    "unit": {"type": "string", "minLength": 1},
+    "direction": {"enum": ["minimize", "maximize"]},
+    "expires_at_ms": {"type": "integer", "minimum": 0},
+    "evaluation_window_s": {"type": "number", "exclusiveMinimum": 0},
+    "minimum_gain": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+    "regression_fraction": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["metric", "unit", "operator", "bound"],
+        "additionalProperties": false,
+        "properties": {
+          "metric": {"type": "string", "minLength": 1},
+          "unit": {"type": "string", "minLength": 1},
+          "operator": {"enum": ["<=", ">="]},
+          "bound": {"type": "number", "minimum": 0}
+        }
+      }
+    }
+  }
+}
