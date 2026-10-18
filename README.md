@@ -1,84 +1,152 @@
+<p align="center">
+  <img src="https://sce.scut.edu.cn/_upload/site/01/46/326/logo.jpg" alt="Header Logo" width="100%" />
+</p>
+
+<div align="center">
+
 # ARMA4OS
-面向openEuler的自适应资源管控Agent
 
-## 核心目标
-设计并实现一个运行在用户态的自适应资源管控 Agent 框架。Agent 能够感知系统中的 workload，并根据负载特征动态选择或生成资源管理策略，重点方向是借助 Linux sched_ext / scx 调整 CPU 调度策略，从而改善目标 workload 的性能。
+### 面向 openEuler 的自适应资源管控 Agent
+*(Adaptive Resource Management Agent for Operating Systems)*
 
-扩展方向：除 CPU 调度外，可进一步把 eBPF 作为系统侧 hook，由 Agent 负责策略决策，扩展到网络策略、安全策略、cgroup 资源控制等操作系统资源管理场景。
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Rust](https://img.shields.io/badge/Rust-2021-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![sched_ext](https://img.shields.io/badge/sched__ext-Linux%20scx-E95420?style=flat-square&logo=linux&logoColor=white)](https://github.com/sched-ext/scx)
+[![eBPF](https://img.shields.io/badge/eBPF-Tracing%20%26%20Hooks-FFDD00?style=flat-square&logo=ebpf&logoColor=black)](https://ebpf.io/)
+[![openEuler](https://img.shields.io/badge/openEuler-24.03%20LTS-002FA7?style=flat-square&logo=openeuler&logoColor=white)](https://www.openeuler.org/)
 
-**赛题要求：**
-- 构建可扩展的用户态资源管控 Agent 框架，并设计标准化的 Tool / Skills 能力接口，便于快速新增 Agent 能力。
-- 能够感知 workload 的运行状态和资源需求，并据此调整 CPU 调度策略。
-- 集成 sched_ext / scx 调度器，形成可实际运行的调度闭环，并用实验验证对 workload 的性能优化效果。
-- 支持以 eBPF 作为 hook 扩展到 network policy、security policy、resource control（如 cgroup）等方向。
-- 提供完整的性能对比数据，以及可复现的实验环境、配置和测试方法。
+<p align="center">
+  <a href="#-核心目标">核心目标</a> •
+  <a href="#-赛题要求与评分细则">赛题要求</a> •
+  <a href="#-框架架构与快速开始">快速开始</a> •
+  <a href="#-主要目录职责">项目结构</a> •
+  <a href="#-相关文档">技术文档</a>
+</p>
 
+</div>
 
-**参考资料：**
-https://mp.weixin.qq.com/s/ewC8gTMRvm2NO6ywoproAA
-Towards Agentic OS: An LLM Agent Framework for Linux Schedulers
-Mixture-of-Schedulers: An Adaptive Scheduling Agent as a Learned Router for Expert Policies
-https://github.com/sched-ext/scx
+---
 
-评分细则
-评分项	分值	重点
-创新性	30	Agent 架构设计与调度策略创新
-功能完整性	25	workload 感知、策略调整准确性与灵活性
-性能提升	25	相对默认调度器的实际性能改善
-代码质量	10	代码结构、注释、可维护性
-演示效果	10	现场演示的完整性、流畅度与可验证性
+## 🎯 核心目标
 
-## 框架代码
+设计并实现一个运行在用户态的自适应资源管控 Agent 框架。Agent 能够实时感知系统中的 workload，并根据负载特征动态选择或生成资源管理策略。重点方向是借助 Linux `sched_ext` / `scx` 调整 CPU 调度策略，从而显著改善目标 workload 的性能表现。
 
-当前版本提供 **Python 在线控制面 + Rust 受限执行器**。Python 使用标准库，Rust 执行器使用 serde / serde_json / libc。先运行无需 root 的模拟闭环，再在目标内核上配置真实 scx 专家与标定数据。
+- **核心场景**：基于 `sched_ext` (scx) 的用户态 CPU 调度自适应切换与优化闭环。
+- **扩展方向**：以 eBPF 作为系统侧 hook，由 Agent 负责统一策略决策，延伸覆盖网络策略 (Network Policy)、安全策略 (Security Policy) 及 cgroup 细粒度资源控制等操作系统资源管理场景。
+
+---
+
+## 📋 赛题要求与评分细则
+
+### 赛题要求
+
+- **架构可扩展**：构建可扩展的用户态资源管控 Agent 框架，设计标准化的 Tool / Skills 能力接口，便于快速新增 Agent 管控能力。
+- **负载感知**：能够实时感知 workload 的运行状态和资源需求，并据此精准调整 CPU 调度策略。
+- **闭环运行**：集成 `sched_ext` / `scx` 调度器，形成可实际运行的调度闭环，并用实验验证对 workload 的性能优化效果。
+- **Hook 扩展**：支持以 eBPF 作为 hook，扩展到 network policy、security policy、resource control（如 cgroup）等方向。
+- **可复现验证**：提供完整的性能对比数据，以及可复现的实验环境、配置清单和基准测试方法。
+
+### 评分细则
+
+| 评分项 | 分值 | 评价重点 |
+| :--- | :---: | :--- |
+| **创新性** | **30** | Agent 架构设计与调度策略创新 |
+| **功能完整性** | **25** | Workload 感知、策略调整准确性与灵活性 |
+| **性能提升** | **25** | 相对默认调度器的实际性能改善 |
+| **代码质量** | **10** | 代码结构、注释规范、工程质量与可维护性 |
+| **演示效果** | **10** | 现场演示的完整性、流畅度与可验证性 |
+
+### 参考资料
+
+- 智能调度前沿：[Towards Agentic OS: An LLM Agent Framework for Linux Schedulers](https://mp.weixin.qq.com/s/ewC8gTMRvm2NO6ywoproAA)
+- 专家路由模型：[Mixture-of-Schedulers: An Adaptive Scheduling Agent as a Learned Router for Expert Policies](https://github.com/sched-ext/scx)
+- 上游调度仓库：[sched-ext/scx (Linux sched_ext BPF Schedulers)](https://github.com/sched-ext/scx)
+
+---
+
+## 🚀 框架架构与快速开始
+
+当前系统采用 **Python 在线控制面 + Rust 受限执行器** 的双层解耦架构：
+- **Python 控制面**：基于 Python 3.11+ 标准库构建，负责指标采集、负载画像、目标管理、证据库、路由推断与 Tool / Skill 注册。
+- **Rust 执行器**：负责执行面白名单过滤、单例互斥排他、sysfs 状态真实核验、生命周期管理、超时管控与故障回滚。
+
+开发时建议先运行无需 root 特权的**模拟闭环**，再在具备支持的目标内核上接入真实 scx 专家与标定数据。
+
+### 1. 模拟闭环与基准测试
 
 ```bash
-# Python 3.11+；从仓库根目录执行，无需 pip 安装
+# 1. 检查控制面能力（Python 3.11+，仅依赖标准库，无需外部依赖安装）
 python3 -m arma4os capabilities
+
+# 2. 运行纯 Python 模拟闭环演示
 python3 -m arma4os demo
 
-# 使用同一 Python 控制面驱动 Rust 模拟执行器
+# 3. 编译并使用 Python 控制面驱动 Rust 模拟执行器联调
 cargo build --workspace --locked
 python3 -m arma4os demo --executor ./target/debug/arma-executor \
   --executor-config configs/executor.simulated.json
 
-# 实际运行固定输入压缩任务，记录默认调度器上的独立重复
+# 4. 运行固定输入压缩任务，采集默认调度器上的基准数据
 python3 -m benchmarks run --config configs/benchmarks.json \
   --output results/baseline-001 --repeats 5 --seed 42
 python3 -m benchmarks summarize results/baseline-001
 
-# 回归验证
+# 5. 回归与单元测试
 python3 -m unittest discover -s tests -v
 cargo test --workspace --locked
 ```
 
-`demo` 的观测、专家成绩和性能退化均为**合成数据**，只验证协议、决策与恢复流程，不能作为性能改善证据。压缩基准会真正运行任务；使用模拟执行器的多策略矩阵也不能用于比较真实调度策略。
+> **注意**：`demo` 输出的观测数据、专家评分与性能退化均为**合成数据 (Synthetic Data)**，用于验证协议格式、决策路由与异常回滚流程，不代表真实内核性能优化收益。
 
-在线模式：
+### 2. 在线模式与 Tool / Skill 交互
 
 ```bash
-# 无特权监控；初始策略库为空、示例目标已过期，会解释保持原因
+# 无特权只读监控（初始策略库为空且目标过期时，会详细解释保持默认的原因）
 python3 -m arma4os run --ticks 5 --monitor-only
 
-# 输出 Tool schema，或从 stdin 接收 JSONL 请求
+# 导出标准化 Tool schemas，或从标准输入接收 JSONL 请求进行交互
 python3 -m arma4os tools --schemas
 python3 -m arma4os tools
 
-# 执行有前置条件与恢复步骤的 Skill
+# 试运行（Dry-run）具备前置检查与恢复步骤的复合 Skill
 python3 -m arma4os skill mixed_workload_tuning --dry-run
 ```
 
-真实执行需显式传入 `--executor` 与 `--executor-config configs/executor.real.json`。执行器只接受配置中的策略 ID 和固定 argv，核对 sysfs 的实际状态，管理自己启动的进程。真实运行前需按目标机器核实 scx 二进制路径、`kernel_ops`、权限、目标有效期和标定证据。真实执行模式和 eBPF 示例未由上述模拟测试证明可在目标 openEuler 内核加载；本仓库尚无性能收益结论。
+### 3. 真实内核调度执行
 
-主要目录：
+在真实环境中执行时，需显式传入执行器二进制路径与实际配置文件：
 
-| 路径 | 职责 |
-| --- | --- |
-| `arma4os/` | 版本化合同、采集、画像、策略库、路由、反馈、Tool / Skill、审计与 CLI |
-| `crates/arma-executor/` | Rust JSONL 执行器、策略白名单、互斥、sysfs 核验、超时与恢复 |
-| `benchmarks/` | 固定工作负载、解析器、串行随机矩阵、原始数据与汇总 |
-| `configs/` | 执行器、目标、路由器、实验与 hook 的示例配置 |
-| `hooks/` | 额外 cgroup_skb eBPF 观测 hook 源码 |
-| `tests/` | Python 决策、恢复、权限范围和实验回归测试 |
+```bash
+python3 -m arma4os run --executor ./target/release/arma-executor \
+  --executor-config configs/executor.real.json
+```
 
-详细设计见 [架构与论文方法映射](docs/architecture.md)、[运行与扩展指南](docs/framework-guide.md)、[Rust/Python 协议](docs/protocol.md)。后续实测与比赛里程碑仍按 [实施计划](docs/competition-plan.md) 推进。
+> **内核安全与权限说明**：
+> - 真实执行器严格限制仅接受配置文件预置的策略 ID 与固定 argv，不接受动态 shell 拼接。
+> - 每次动作均实时比对 `/sys/kernel/sched_ext` 的状态与 `kernel_ops`，只管理框架自身拥有的调度器进程。
+> - 在目标 openEuler 机器上线前，需预先确认内核版本（推荐 6.12+ 或包含 backport 支持）、BTF 具备情况、scx 二进制可用性及运行权限。
+
+---
+
+## 📁 主要目录职责
+
+| 目录路径 | 核心职责说明 |
+| :--- | :--- |
+| `arma4os/` | Python 控制面：版本化合同、指标采集、画像分析、策略库、决策路由、反馈评价、Tool / Skill、审计与 CLI 入口 |
+| `crates/arma-executor/` | Rust 执行面：JSONL 协议处理、策略白名单机制、单例互斥锁、sysfs 核验、超时管控与自动恢复 |
+| `benchmarks/` | 固定基准负载、指标解析器、串行随机执行矩阵、原始指标记录与汇总分析器 |
+| `configs/` | 执行器环境定义、优化目标模板、策略路由器、基准测试矩阵与 hook 的标准配置 |
+| `hooks/` | 扩展 eBPF 观测与管控探针（如 `cgroup_skb` hook）源码 |
+| `tests/` | Python 决策逻辑、恢复机制、权限范围及基准实验回归测试用例 |
+
+---
+
+## 📚 相关文档
+
+详细设计、协议规范与实验方法请参阅各专题文档：
+
+- 🏛️ **[架构设计与论文方法映射](docs/architecture.md)**：系统模块职责、反馈循环模型、路由设计与成本模型。
+- 📖 **[运行与扩展指南](docs/framework-guide.md)**：启动步骤、真实 scx 接入、标定流程、Tool / Skill / hook 扩展机制。
+- 🔌 **[Rust/Python 跨语言协议](docs/protocol.md)**：JSONL 交互协议、动作生命周期、期限超时与故障恢复合同。
+- 🗓️ **[比赛里程碑与实施计划](docs/competition-plan.md)**：阶段任务划分、交付件要求与实验矩阵设计。
+- 🔍 **[系统验证与实验记录](docs/validation.md)**：各环境只读检查、能力核实及测试验证追踪。
