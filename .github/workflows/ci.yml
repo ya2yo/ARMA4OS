@@ -1,0 +1,16 @@
+name: framework
+on: [push, pull_request]
+jobs:
+  portable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: make test
+      - run: make check
+      - run: python3 -m arma4os demo --executor ./target/debug/arma-executor --executor-config configs/executor.simulated.json
