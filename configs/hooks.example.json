@@ -1,0 +1,11 @@
+{
+  "cpu_weight": {
+    "authorized": {"service": "/sys/fs/cgroup/arma4os-demo"}
+  },
+  "network_counter": {
+    "authorized": {"service": "/sys/fs/cgroup/arma4os-demo"},
+    "object_file": "build/cgroup_counter.bpf.o",
+    "pin_root": "/sys/fs/bpf/arma4os",
+    "bpftool": "/usr/sbin/bpftool"
+  }
+}
