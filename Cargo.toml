@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "crates/arma-executor",
+]
+resolver = "2"

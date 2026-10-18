@@ -1,0 +1,20 @@
+[package]
+name = "arma-executor"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "arma-executor"
+path = "src/main.rs"
+
+[lib]
+name = "arma_executor"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

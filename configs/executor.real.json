@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "backend": "real",
+  "state_dir": "/run/arma4os",
+  "sysfs_root": "/sys/kernel/sched_ext",
+  "policies": [
+    {"id": "default", "command": [], "kernel_ops": null},
+    {"id": "scx_bpfland", "command": ["/usr/bin/scx_bpfland"], "kernel_ops": "bpfland"},
+    {"id": "scx_rusty", "command": ["/usr/bin/scx_rusty"], "kernel_ops": "rusty"}
+  ]
+}
