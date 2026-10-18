@@ -4,6 +4,8 @@
 
 团队约束：2 人、约 8 周、x86_64，优先在 WSL2 跑通，最终面向 openEuler。本文是实施计划，文中的性能目标和参数都是待实验验证的建议，不代表已经取得的结果。
 
+框架实现进度：仓库现已补齐 Python 控制面、Rust 执行器、Tool / Skill、hook、实验运行器与回归测试，入口见 README 和 `docs/framework-guide.md`。下文原拟定目录已落地并扩展；真实 scx / eBPF 加载、45 次正式静态矩阵、动态收益与 openEuler 复现仍按本计划验收，不能由模拟测试替代。
+
 ## 0. 环境解决后的当前执行计划
 
 用户已确认环境问题解决。后文第 4 节的内核配置检查属于前期记录，不能继续作为当前阻断条件；进入基准实验与最小闭环实现阶段。新的内核、scx 版本和可用调度器以实验 manifest 为准，本次没有重新核查或执行加载。
@@ -34,7 +36,7 @@
 
 ### 0.3 最先实现的工程接口
 
-建议最小目录边界为 `arma4os/`（collector、selector、executor、registry）、`benchmarks/`（runner 与输出解析）、`configs/`（workload 与调度器白名单）、`tests/`（执行 / 恢复及指标解析）、`results/`（实验产物）。这是拟定结构，当前尚未创建相应实现。
+建议最小目录边界为 `arma4os/`（collector、selector、executor、registry）、`benchmarks/`（runner 与输出解析）、`configs/`（workload 与调度器白名单）、`tests/`（执行 / 恢复及指标解析）、`results/`（实验产物）。该结构现已实现，另外增加 `crates/arma-executor/` 作为 Rust 执行层、`hooks/` 作为 eBPF 示例，以及 `schemas/` 作为外部合同。
 
 双方优先约定四种数据，而不是等待完整框架完成：
 
