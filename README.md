@@ -114,6 +114,32 @@ python3 -m arma4os skill mixed_workload_tuning --dry-run
 
 ### 3. 真实内核调度执行
 
+从当前开发机一条命令连接已启动的 VMware openEuler、同步源码、运行真实测试并取回结果：
+
+```bash
+make test-vm
+# 地址变化或使用原生 Linux SSH 时可覆盖连接参数
+make test-vm VM_HOST=root@192.168.66.128 VM_TRANSPORT=native
+```
+
+默认通过免密 SSH 连接 `root@192.168.66.128`；WSL 下自动使用 Windows PowerShell 的 SSH 与已配置的密钥。每次同步当前工作区源码（包含未提交修改）到新的客机目录，在客机执行 `make test-real`，再校验并取回结果到本地 `results/vmware/vm-*`。需要虚拟机已开机、网络和 SSH 认证可用；不会启动 VMware 或修改 SSH 配置。可配置变量见 [Makefile](Makefile)。
+
+在已准备好 sched_ext 内核和 scx_simple 的 openEuler 客机中，可通过 Makefile 重跑真实烟雾测试：
+
+```bash
+# 在客机仓库根目录运行；此步骤只读，不加载调度器
+make test-real-check
+
+# 在具备 BPF 权限的管理员终端运行：构建、真实对比、回滚/EOF/SIGTERM 清理验证
+make test-real
+
+# 可覆盖调度器绝对路径、重复次数和全新结果目录
+make test-real SCX_SIMPLE=/absolute/path/to/scx_simple \
+  REAL_REPEATS=5 REAL_SEED=42 REAL_OUTPUT=results/real-001
+```
+
+默认调度器路径为 `/root/sched-ext-dev/tools/sched_ext/build/bin/scx_simple`，与当前 openEuler 实验机一致。默认每策略 1 次预热、5 次正式运行，结果自动保存到新的 `results/real-smoke-*` 目录；失败返回非零并保留日志。命令在当前主机执行，不自动 SSH 或 sudo。
+
 在真实环境中执行时，需显式传入执行器二进制路径与实际配置文件：
 
 ```bash
@@ -146,7 +172,5 @@ python3 -m arma4os run --executor ./target/release/arma-executor \
 详细设计、协议规范与实验方法请参阅各专题文档：
 
 - 🏛️ **[架构设计与论文方法映射](docs/architecture.md)**：系统模块职责、反馈循环模型、路由设计与成本模型。
-- 📖 **[运行与扩展指南](docs/framework-guide.md)**：启动步骤、真实 scx 接入、标定流程、Tool / Skill / hook 扩展机制。
 - 🔌 **[Rust/Python 跨语言协议](docs/protocol.md)**：JSONL 交互协议、动作生命周期、期限超时与故障恢复合同。
 - 🗓️ **[比赛里程碑与实施计划](docs/competition-plan.md)**：阶段任务划分、交付件要求与实验矩阵设计。
-- 🔍 **[系统验证与实验记录](docs/validation.md)**：各环境只读检查、能力核实及测试验证追踪。

@@ -11,11 +11,11 @@
 | 状态 | 内容 |
 | --- | --- |
 | 已完成框架 | 采集、画像、目标与策略库、规则路由、Rust 执行器、反馈回滚、Tool / Skill、hook 接口、实验与标定工具 |
-| 已验证 | Python / Rust 测试、跨语言模拟闭环、默认调度器压缩烟雾实验；详见[验证记录](validation.md) |
+| 已验证 | Python / Rust 测试、跨语言模拟闭环、默认调度器压缩烟雾实验 |
 | 下一步 | 真实 scx 加载与恢复、三个场景的静态对比、实测切换成本、真实策略库与在线联调 |
 | 最终验收 | 动态收益与消融、openEuler 复现、额外 eBPF hook 实际运行、稳定性与演示 |
 
-当前没有真实 scx / eBPF 加载成功或性能提升的验证结论。用户已确认前期环境问题解决；执行实验时记录当前内核与能力，不再把旧环境问题作为既定阻断条件。
+2026-10-21 已在 VMware openEuler SP3 的 sched_ext backport 内核上完成 default + scx_simple 真实压缩烟雾矩阵（各 5 次正式运行）及 rollback、EOF、SIGTERM 恢复验证。尚无性能提升结论，也未完成两个真实专家、延迟/混部和在线自适应验证。执行实验时记录当前内核与能力，不再把旧环境问题作为既定阻断条件。
 
 ## 2. 接下来五个工作日
 
@@ -71,7 +71,6 @@
 
 优先把预算用于真实 CPU 调度、可靠恢复、应用 KPI 和复现实验。小模型、低频 LLM、MCP 网络接入、layered 调参在主线数据支持后再做；若正式赛题明确要求 LLM，再提升其优先级。自生成调度器、在线 RL、完整多 Agent 系统和复杂看板暂不进入本轮。
 
-- 运行、配置与标定步骤：[运行与扩展指南](framework-guide.md)。
 - 模块职责、ASA / SchedCP 方法映射及成本模型：[架构](architecture.md)；动作字段与恢复语义：[执行协议](protocol.md)。
 - 原始论文：[ASA](https://arxiv.org/html/2511.11628v1)、[SchedCP](https://arxiv.org/html/2509.01245v4)。借鉴专家路由、时间稳定与工具化控制面，当前实现不宣称端到端复现论文。
 - 目标机兼容性依据：[scx](https://github.com/sched-ext/scx)、[Linux sched_ext](https://docs.kernel.org/scheduler/sched-ext.html)。实际实验锁定提交与内核组合；WSL 结果不直接等同于原生 openEuler 结果。
