@@ -1,51 +1,11 @@
-"""Benchmark Configuration and Schema Definition.
-
-Config Schema Specification (JSON):
-------------------------------------
-The benchmark configuration file defines the policies and workloads to execute.
-It follows this schema (schema_version = 1):
-
-{
-  "schema_version": 1,
-  "description": "Optional human-readable description",
-  "policies": ["default", "scx_bpfland"],       // Must include "default" as baseline
-  "timeout_sec": 60.0,                          // Global default timeout in seconds
-  "warmup": 0,                                  // Global default warmup trials
-  "workloads": [
-    {
-      "name": "compression_smoke",              // Unique workload identifier
-      "command": [                              // Fixed argv array, never shell
-        "python3",
-        "-m",
-        "benchmarks.workloads.compression",
-        "--size-kb",
-        "1024"
-      ],
-      "parser": "elapsed",                      // "elapsed" or "schbench"
-      "timeout_sec": 30.0,                      // Workload-specific timeout (optional)
-      "warmup": 1,                              // Workload-specific warmup count (optional)
-      "metadata": {}                            // Optional user metadata
-    }
-  ]
-}
-
-Constraints:
-1. Workload command must be a non-empty list of strings (argv). Shell strings are strictly rejected.
-2. Parser must be either 'elapsed' or 'schbench'.
-3. The policies list MUST contain the 'default' baseline policy. Real matrices without 'default' are refused.
-4. If running without an external executor, only the 'default' policy is permitted.
-"""
-
+"""Shared experiment contracts; independent of execution and storage."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import json
+from dataclasses import asdict, dataclass, field
 import math
-from pathlib import Path
 from typing import Any
 
-
-def _validate_timeout(val: Any, field_name: str) -> float:
+def validate_timeout(val: Any, field_name: str) -> float:
     if isinstance(val, bool) or not isinstance(val, (int, float)):
         raise ValueError(f"{field_name} must be a number, got {type(val).__name__} ({val!r})")
     val_float = float(val)
@@ -53,14 +13,12 @@ def _validate_timeout(val: Any, field_name: str) -> float:
         raise ValueError(f"{field_name} must be finite and positive, got {val}")
     return val_float
 
-
-def _validate_warmup(val: Any, field_name: str) -> int:
+def validate_warmup(val: Any, field_name: str) -> int:
     if isinstance(val, bool) or not isinstance(val, int) or isinstance(val, float):
         raise ValueError(f"{field_name} must be a non-negative integer, got {type(val).__name__} ({val!r})")
     if val < 0:
         raise ValueError(f"{field_name} must be non-negative, got {val}")
     return val
-
 
 @dataclass
 class WorkloadConfig:
@@ -81,11 +39,10 @@ class WorkloadConfig:
         for idx, arg in enumerate(self.command):
             if not isinstance(arg, str):
                 raise ValueError(f"Workload '{self.name}' command argument at index {idx} must be a string, got {type(arg)}")
-        if self.parser not in ("elapsed", "schbench"):
-            raise ValueError(f"Workload '{self.name}' parser must be 'elapsed' or 'schbench', got {self.parser!r}")
-        _validate_timeout(self.timeout_sec, f"Workload '{self.name}' timeout_sec")
-        _validate_warmup(self.warmup, f"Workload '{self.name}' warmup")
-
+        if self.parser not in ("elapsed", "schbench", "formal", "ffmpeg"):
+            raise ValueError(f"Workload '{self.name}' parser must be 'elapsed', 'schbench', 'formal', or 'ffmpeg', got {self.parser!r}")
+        validate_timeout(self.timeout_sec, f"Workload '{self.name}' timeout_sec")
+        validate_warmup(self.warmup, f"Workload '{self.name}' warmup")
 
 @dataclass
 class BenchmarkConfig:
@@ -109,8 +66,8 @@ class BenchmarkConfig:
         if len(self.policies) != len(set(self.policies)):
             raise ValueError(f"Duplicate policies found in configuration: {self.policies}")
 
-        _validate_timeout(self.timeout_sec, "BenchmarkConfig timeout_sec")
-        _validate_warmup(self.warmup, "BenchmarkConfig warmup")
+        validate_timeout(self.timeout_sec, "BenchmarkConfig timeout_sec")
+        validate_warmup(self.warmup, "BenchmarkConfig warmup")
 
         # Policy baseline check
         if "default" not in self.policies:
@@ -154,8 +111,8 @@ class BenchmarkConfig:
         if len(policies_raw) != len(set(policies_raw)):
             raise ValueError(f"Duplicate policies in configuration: {policies_raw}")
 
-        global_timeout = _validate_timeout(data.get("timeout_sec", 60.0), "timeout_sec")
-        global_warmup = _validate_warmup(data.get("warmup", 0), "warmup")
+        global_timeout = validate_timeout(data.get("timeout_sec", 60.0), "timeout_sec")
+        global_warmup = validate_warmup(data.get("warmup", 0), "warmup")
 
         workloads_raw = data.get("workloads", [])
         if not isinstance(workloads_raw, list):
@@ -177,8 +134,8 @@ class BenchmarkConfig:
                 if not isinstance(arg, str):
                     raise ValueError(f"Workload '{w_name}' command argument at index {idx} must be a string, got {type(arg)}")
 
-            timeout_sec = _validate_timeout(item.get("timeout_sec", global_timeout), f"Workload '{w_name}' timeout_sec")
-            warmup = _validate_warmup(item.get("warmup", global_warmup), f"Workload '{w_name}' warmup")
+            timeout_sec = validate_timeout(item.get("timeout_sec", global_timeout), f"Workload '{w_name}' timeout_sec")
+            warmup = validate_warmup(item.get("warmup", global_warmup), f"Workload '{w_name}' warmup")
             workloads.append(
                 WorkloadConfig(
                     name=w_name,
@@ -219,17 +176,36 @@ class BenchmarkConfig:
             ],
         }
 
+@dataclass
+class TrialPlan:
+    """Execution plan for an individual trial."""
 
-def load_config(path: str | Path) -> BenchmarkConfig:
-    """Load and parse benchmark configuration from a JSON file."""
-    config_path = Path(path)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
+    trial_id: str
+    round_index: int
+    repeat_index: int
+    policy: str
+    workload: WorkloadConfig
+    is_warmup: bool = False
 
-    with config_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+@dataclass
+class TrialRecord:
+    """Execution record and measurements for a single trial."""
 
-    if not isinstance(data, dict):
-        raise ValueError(f"Invalid JSON configuration root: expected object, got {type(data)}")
+    trial_id: str
+    round_index: int
+    repeat_index: int
+    policy: str
+    workload: str
+    is_warmup: bool
+    status: str  # "success" | "timeout" | "nonzero_exit" | "parse_error"
+    exit_code: int | None
+    start_time_unix: float
+    end_time_unix: float
+    duration_s: float
+    stdout_path: str
+    stderr_path: str
+    metrics: dict[str, Any] = field(default_factory=dict)
+    error_message: str | None = None
 
-    return BenchmarkConfig.from_dict(data)
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

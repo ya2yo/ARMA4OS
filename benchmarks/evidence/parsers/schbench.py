@@ -6,7 +6,7 @@ import math
 import re
 from typing import Any
 
-from benchmarks.parsers import ParseError, ParserResult
+from benchmarks.evidence.parsers.base import ParseError, ParserResult
 
 
 class SchbenchParser:
@@ -53,22 +53,40 @@ class SchbenchParser:
         r"Requests:\s*([0-9]+)\s*\(([0-9]+(?:\.[0-9]+)?)/s\)",
         re.IGNORECASE,
     )
+    BLOCK_PATTERN = re.compile(
+        r"^\s*(Wakeup\s+Latenc(?:y|ies)|Request\s+Latenc(?:y|ies)|Latenc(?:y|ies)|RPS)\s+percentiles\b",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    AVERAGE_RPS_PATTERN = re.compile(
+        r"^\s*average rps:\s*([0-9]+(?:\.[0-9]+)?)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
 
     def parse(self, stdout: str, stderr: str, duration_s: float, exit_code: int) -> ParserResult:
         if exit_code != 0:
             raise ParseError(f"Process exited with non-zero exit code: {exit_code}")
 
-        if not stdout or not stdout.strip():
-            raise ParseError("schbench stdout is empty")
+        # Upstream schbench writes its human-readable measurements to stderr.
+        # Keep compatibility with versions and wrappers that use stdout.
+        output = stdout + "\n" + stderr
+        if not output.strip():
+            raise ParseError("schbench output is empty")
 
         # schbench may output multiple blocks during execution; isolate blocks and inspect the final block
-        block_markers = list(re.finditer(r"(?:Wakeup\s+)?Latenc(?:y|ies)\s+percentiles", stdout, re.IGNORECASE))
+        block_markers = list(self.BLOCK_PATTERN.finditer(output))
         if block_markers:
-            # Use content from the last header to the end
-            last_marker = block_markers[-1]
-            target_text = stdout[last_marker.start():]
+            # Modern schbench emits wakeup, request, and RPS distributions.
+            # Only the final wakeup distribution is the wakeup-latency metric.
+            candidates = [m for m in block_markers if m.group(1).lower().startswith("wakeup")]
+            if not candidates:
+                candidates = [m for m in block_markers if m.group(1).lower().startswith("latenc")]
+            if not candidates:
+                raise ParseError("Missing wakeup latency distribution in schbench output")
+            last_marker = candidates[-1]
+            end = next((m.start() for m in block_markers if m.start() > last_marker.start()), len(output))
+            target_text = output[last_marker.start():end]
         else:
-            target_text = stdout
+            target_text = output
 
         # 1. Detect and establish explicit units
         detected_header_unit: str | None = None
@@ -126,6 +144,9 @@ class SchbenchParser:
         else:
             raise ParseError("Ambiguous latency unit in schbench output: no explicit unit found in header or percentile lines")
 
+        if unit not in ("usec", "us", "ms", "ns", "s"):
+            raise ParseError(f"Unsupported latency unit: {unit}")
+
         # 3. Strict requirement: reject missing or malformed p99
         if "p99" not in percentiles:
             raise ParseError("Missing p99 wakeup latency in schbench output")
@@ -151,7 +172,7 @@ class SchbenchParser:
                 pass
 
         # 5. Extract requests/throughput if present
-        rps_matches = list(self.RPS_PATTERN.finditer(target_text))
+        rps_matches = list(self.RPS_PATTERN.finditer(output))
         if rps_matches:
             last_rps = rps_matches[-1]
             try:
@@ -159,5 +180,14 @@ class SchbenchParser:
                 metrics["rps"] = float(last_rps.group(2))
             except ValueError:
                 pass
+        average_rps_matches = list(self.AVERAGE_RPS_PATTERN.finditer(output))
+        if average_rps_matches:
+            rps = float(average_rps_matches[-1].group(1))
+            if not math.isfinite(rps):
+                raise ParseError("Non-finite average rps in schbench output")
+            metrics["rps"] = rps
 
+        for name, value in metrics.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and not math.isfinite(value):
+                raise ParseError(f"Non-finite schbench metric: {name}")
         return ParserResult(metrics=metrics, raw_summary=f"p99={metrics['p99']} {metrics['latency_unit']}")

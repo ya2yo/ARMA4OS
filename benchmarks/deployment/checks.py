@@ -1,9 +1,8 @@
-"""Opt-in real sched_ext smoke matrix and bounded executor recovery checks.
+"""Opt-in target-host sched_ext environment and executor lifecycle checks.
 
-Run on the target host with administrator-provided BPF privileges. No sudo/SSH,
-external scheduler takeover, or simulated performance evidence is provided here.
+Run on the target host with administrator-provided BPF privileges. Read-only
+checks do not establish load permissions or scheduler ABI compatibility.
 """
-
 from __future__ import annotations
 
 import argparse
@@ -21,22 +20,15 @@ import time
 import uuid
 
 from arma4os.executor import RustExecutor
-from benchmarks.config import load_config
-from benchmarks.summary import reconstruct_summary
+from benchmarks.orchestration.config import load_config
+from benchmarks.reporting.reconstruction import reconstruct_summary
+from benchmarks.deployment._support import require, write_json
 
 SYSFS = Path("/sys/kernel/sched_ext")
+
 BTF = Path("/sys/kernel/btf/vmlinux")
+
 STATE_DIR = "/run/arma4os"
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise RuntimeError(message)
-
-
-def write_json(path: Path, value: dict) -> None:
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
-
 
 def check_environment(scheduler: Path) -> dict:
     require(sys.version_info >= (3, 11), "Python >= 3.11 is required")
@@ -51,7 +43,6 @@ def check_environment(scheduler: Path) -> dict:
             "state": state, "scheduler": str(scheduler), "state_dir": STATE_DIR,
             "scheduler_sha256": hashlib.sha256(scheduler.read_bytes()).hexdigest(),
             "note": "Read-only checks do not prove BPF load permission or ABI compatibility"}
-
 
 def run_command(argv: list[str], output: Path, name: str, timeout_s: float) -> int:
     """Preserve complete stdout/stderr; interruption requests child cleanup first."""
@@ -74,7 +65,6 @@ def run_command(argv: list[str], output: Path, name: str, timeout_s: float) -> i
         print((output / f"{name}.stderr").read_text(), file=sys.stderr, end="", flush=True)
     return code
 
-
 @contextmanager
 def executor_diagnostics(path: Path):
     """RustExecutor inherits OS stderr; retain its cleanup diagnostics verbatim."""
@@ -86,7 +76,6 @@ def executor_diagnostics(path: Path):
     finally:
         os.dup2(saved, 2)
         os.close(saved)
-
 
 def verify_matrix(run_dir: Path, repeats: int) -> dict:
     manifest = json.loads((run_dir / "manifest.json").read_text())
@@ -113,7 +102,6 @@ def verify_matrix(run_dir: Path, repeats: int) -> dict:
             "Reconstructed trial results contain failures")
     return {"total_trials": len(records), "formal_counts": dict(counts), "summary_matches_raw": True}
 
-
 def wait_recovered(managed_pid: int, timeout_s: float = 12) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -121,7 +109,6 @@ def wait_recovered(managed_pid: int, timeout_s: float = 12) -> None:
             return
         time.sleep(0.05)
     raise RuntimeError(f"Recovery failed: state must be disabled and owned PID {managed_pid} must exit")
-
 
 def lifecycle_case(binary: Path, config: Path, mode: str, record: dict) -> None:
     executor = RustExecutor(binary, config)
@@ -179,10 +166,8 @@ def lifecycle_case(binary: Path, config: Path, mode: str, record: dict) -> None:
             record["after_cleanup_state"] = (SYSFS / "state").read_text().strip()
     record["passed"] = True
 
-
 def interrupted(signum: int, frame: object) -> None:
     raise InterruptedError(f"Received signal {signum}; requesting owned process cleanup")
-
 
 def run_smoke(args: argparse.Namespace) -> int:
     environment = check_environment(args.scheduler)
@@ -242,7 +227,6 @@ def run_smoke(args: argparse.Namespace) -> int:
             signal.signal(sig, handler)
     print(f"Real smoke {'PASSED' if report['ok'] else 'FAILED'}: {output}")
     return 0 if report["ok"] else 1
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)

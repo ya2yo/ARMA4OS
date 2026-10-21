@@ -14,7 +14,7 @@ import sys
 from typing import Any
 import uuid
 
-from benchmarks.config import BenchmarkConfig
+from benchmarks.orchestration.models import BenchmarkConfig
 
 
 def get_git_commit() -> str | None:
@@ -63,47 +63,19 @@ def compute_file_sha256(path: str | Path | None) -> str | None:
 
 
 def get_environment_id() -> str:
-    """Retrieve stable machine environment ID matching primary ARMA4OS implementation."""
+    """Return the stable machine identity used by the ARMA4OS control plane."""
+    identity = {
+        "node": platform.node(),
+        "kernel": platform.release(),
+        "machine": platform.machine(),
+        "cpus": os.cpu_count(),
+        "affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
+    }
     try:
-        from arma4os.cli import environment_id
-        return environment_id()
-    except Exception:
-        identity = {
-            "node": platform.node(),
-            "kernel": platform.release(),
-            "machine": platform.machine(),
-            "cpus": os.cpu_count(),
-            "affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
-        }
-        try:
-            identity["cpuinfo"] = next(s for s in Path("/proc/cpuinfo").read_text().splitlines() if s.startswith("model name"))
-        except (OSError, StopIteration):
-            pass
-        return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
-
-
-def verify_kernel_sched_ext_state() -> str:
-    """Verify /sys/kernel/sched_ext/state for default-only execution.
-
-    Returns 'kernel-default' ONLY if sched_ext is absent or explicitly 'disabled'.
-    Refuses default-only execution if external sched_ext is enabled.
-    """
-    state_path = Path("/sys/kernel/sched_ext/state")
-    if not state_path.exists():
-        # absent = default sched class with unsupported sched_ext
-        return "kernel-default"
-    try:
-        content = state_path.read_text(encoding="utf-8").strip()
-    except OSError as exc:
-        raise RuntimeError(f"Unable to read /sys/kernel/sched_ext/state: {exc}") from exc
-
-    if content == "disabled":
-        return "kernel-default"
-    raise RuntimeError(
-        f"Refusing default-only baseline: external sched_ext scheduler is active "
-        f"(/sys/kernel/sched_ext/state reports '{content}'). "
-        "Disable external sched_ext before executing default-only baseline."
-    )
+        identity["cpuinfo"] = next(s for s in Path("/proc/cpuinfo").read_text().splitlines() if s.startswith("model name"))
+    except (OSError, StopIteration):
+        pass
+    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
 
 
 def generate_manifest(
@@ -121,12 +93,8 @@ def generate_manifest(
 
     env_id = get_environment_id()
 
-    # Determine and verify executor backend
-    if executor_path:
-        backend = executor_backend or "simulated"
-    else:
-        # Default-only mode verifies kernel sched_ext state
-        backend = verify_kernel_sched_ext_state()
+    # The session verifies policy state before assembling evidence metadata.
+    backend = executor_backend or ("simulated" if executor_path else "kernel-default")
 
     binary_versions: dict[str, Any] = {
         "python": sys.version,

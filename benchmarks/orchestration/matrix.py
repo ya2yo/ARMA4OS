@@ -1,25 +1,8 @@
-"""Trial matrix generation and randomized round scheduling."""
-
+"""Generate serial, randomized rounds with separate warmup trials."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import random
-from typing import Iterator
-
-from benchmarks.config import BenchmarkConfig, WorkloadConfig
-
-
-@dataclass
-class TrialPlan:
-    """Execution plan for an individual trial."""
-
-    trial_id: str
-    round_index: int
-    repeat_index: int
-    policy: str
-    workload: WorkloadConfig
-    is_warmup: bool = False
-
+from benchmarks.orchestration.models import BenchmarkConfig, TrialPlan, WorkloadConfig
 
 def generate_trial_plan(
     config: BenchmarkConfig,

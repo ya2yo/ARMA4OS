@@ -34,12 +34,12 @@ class ExecutorClient:
         executor_path: str | Path | None = None,
         config_path: str | Path | None = None,
         actions_log_path: str | Path | None = None,
-        executor: Any = None,
+        executor: RustExecutor | SimulatedExecutor | None = None,
     ) -> None:
         self.executor_path = str(executor_path) if executor_path else None
         self.config_path = str(config_path) if config_path else None
         self.actions_log_path = Path(actions_log_path) if actions_log_path else None
-        self.executor = executor
+        self.executor: RustExecutor | SimulatedExecutor | None = executor
         self.current_policy: str = "default"
 
         if self.actions_log_path:
@@ -79,6 +79,8 @@ class ExecutorClient:
         """Send a request via primary executor and record audit entry."""
         if self.executor is None:
             self.start()
+        if self.executor is None:
+            raise ExecutorError("start_failed", "Executor failed to start")
 
         t0 = time.perf_counter()
         t0_ms = int(time.time() * 1000)

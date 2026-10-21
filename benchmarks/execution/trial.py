@@ -1,80 +1,18 @@
-"""Trial execution, process management, and streaming IO."""
-
+"""Run one trial with bounded process lifetime and retained raw evidence."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-import json
 import os
 from pathlib import Path
-import signal
 import subprocess
 import time
 from typing import Any
 
-from benchmarks.matrix import TrialPlan
-from benchmarks.parsers import ParseError, get_parser
-
-
-@dataclass
-class TrialRecord:
-    """Execution record and measurements for a single trial."""
-
-    trial_id: str
-    round_index: int
-    repeat_index: int
-    policy: str
-    workload: str
-    is_warmup: bool
-    status: str  # "success" | "timeout" | "nonzero_exit" | "parse_error"
-    exit_code: int | None
-    start_time_unix: float
-    end_time_unix: float
-    duration_s: float
-    stdout_path: str
-    stderr_path: str
-    metrics: dict[str, Any] = field(default_factory=dict)
-    error_message: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-MAX_OUTPUT_BYTES: int = 16 * 1024 * 1024  # 16 MiB memory safety cap
-
-
-def read_bounded_file(path: Path, max_bytes: int = MAX_OUTPUT_BYTES) -> str:
-    """Read file content with strict size cap, preventing unbounded memory consumption."""
-    if not path.exists():
-        return ""
-    size = path.stat().st_size
-    if size > max_bytes:
-        raise ParseError(f"Output file '{path.name}' ({size} bytes) exceeds limit ({max_bytes} bytes)")
-    with path.open("r", encoding="utf-8", errors="replace") as f:
-        content = f.read(max_bytes + 1)
-        if len(content.encode("utf-8", errors="replace")) > max_bytes:
-            raise ParseError(f"Output file '{path.name}' exceeds limit ({max_bytes} bytes)")
-        return content
-
-
-def kill_process_group(pgid: int) -> None:
-    """Kill an entire POSIX process group, including any spawned descendants."""
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    except OSError:
-        pass
-
-
-def is_process_group_alive(pgid: int) -> bool:
-    """Check if any processes in the given process group are still alive."""
-    try:
-        os.killpg(pgid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return False
+from benchmarks.orchestration.models import TrialPlan, TrialRecord
+from benchmarks.evidence.files import read_bounded_file
+from benchmarks.evidence.parsers.base import ParseError
+from benchmarks.evidence.parsers.dispatch import parse_trial_evidence
+from benchmarks.evidence.store import write_trial_record
+from benchmarks.execution.processes import is_process_group_alive, kill_process_group
 
 
 def run_trial(
@@ -96,6 +34,8 @@ def run_trial(
 
     effective_timeout = timeout_sec if timeout_sec is not None else plan.workload.timeout_sec
     cmd = plan.workload.command
+    child_env = os.environ.copy()
+    child_env["ARMA_BENCHMARK_TRIAL_DIR"] = str(trial_dir.resolve())
 
     status: str = "success"
     exit_code: int | None = None
@@ -116,31 +56,13 @@ def run_trial(
                 stdout=out_f,
                 stderr=err_f,
                 start_new_session=True,
+                env=child_env,
             )
             pgid = proc.pid
         except OSError as exc:
             t_end_mono = time.monotonic()
             t_end_unix = time.time()
-            record_dict = {
-                "trial_id": plan.trial_id,
-                "round_index": plan.round_index,
-                "repeat_index": plan.repeat_index,
-                "policy": plan.policy,
-                "workload": plan.workload.name,
-                "is_warmup": plan.is_warmup,
-                "status": "nonzero_exit",
-                "exit_code": -1,
-                "start_time_unix": t_start_unix,
-                "end_time_unix": t_end_unix,
-                "duration_s": round(t_end_mono - t_start_mono, 6),
-                "stdout_path": str(stdout_file.relative_to(run_dir)),
-                "stderr_path": str(stderr_file.relative_to(run_dir)),
-                "error_message": f"Failed to spawn process: {exc}",
-            }
-            with (trial_dir / "record.json").open("w", encoding="utf-8") as rf:
-                json.dump(record_dict, rf, indent=2, ensure_ascii=False)
-
-            return TrialRecord(
+            record = TrialRecord(
                 trial_id=plan.trial_id,
                 round_index=plan.round_index,
                 repeat_index=plan.repeat_index,
@@ -157,6 +79,8 @@ def run_trial(
                 metrics={},
                 error_message=f"Failed to spawn process: {exc}",
             )
+            write_trial_record(run_dir, record)
+            return record
 
         try:
             # 1. Wait for process group leader
@@ -206,8 +130,10 @@ def run_trial(
             stdout_text = read_bounded_file(stdout_file)
             stderr_text = read_bounded_file(stderr_file)
 
-            parser = get_parser(plan.workload.parser)
-            parsed_result = parser.parse(stdout_text, stderr_text, duration_s, exit_code)
+            parsed_result = parse_trial_evidence(
+                plan.workload.parser, trial_dir, stdout_text, stderr_text,
+                duration_s, exit_code, plan.workload.metadata,
+            )
             metrics = parsed_result.metrics
             status = "success"
         except ParseError as parse_exc:
@@ -217,27 +143,7 @@ def run_trial(
             status = "parse_error"
             error_message = f"Unexpected parser error: {exc}"
 
-    # Write per-trial raw execution metadata record.json
-    raw_meta = {
-        "trial_id": plan.trial_id,
-        "round_index": plan.round_index,
-        "repeat_index": plan.repeat_index,
-        "policy": plan.policy,
-        "workload": plan.workload.name,
-        "is_warmup": plan.is_warmup,
-        "status": status,
-        "exit_code": exit_code,
-        "start_time_unix": t_start_unix,
-        "end_time_unix": t_end_unix,
-        "duration_s": round(duration_s, 6),
-        "stdout_path": str(stdout_file.relative_to(run_dir)),
-        "stderr_path": str(stderr_file.relative_to(run_dir)),
-        "error_message": error_message,
-    }
-    with (trial_dir / "record.json").open("w", encoding="utf-8") as rf:
-        json.dump(raw_meta, rf, indent=2, ensure_ascii=False)
-
-    return TrialRecord(
+    record = TrialRecord(
         trial_id=plan.trial_id,
         round_index=plan.round_index,
         repeat_index=plan.repeat_index,
@@ -254,3 +160,5 @@ def run_trial(
         metrics=metrics,
         error_message=error_message,
     )
+    write_trial_record(run_dir, record)
+    return record

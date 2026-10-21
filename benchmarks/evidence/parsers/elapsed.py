@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from benchmarks.parsers import ParseError, ParserResult
+from benchmarks.evidence.parsers.base import ParseError, ParserResult
 
 
 class ElapsedParser:

@@ -1,122 +1,24 @@
-"""Deploy the current source to an already running SSH guest and run test-real."""
-
+"""Deploy fresh source snapshots to SSH guests and retrieve verification evidence."""
 from __future__ import annotations
 
 import argparse
 import base64
 from datetime import datetime, timezone
 import hashlib
-import io
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import shlex
-import shutil
 import signal
 import subprocess
 import sys
 import tarfile
 import uuid
 
-from benchmarks.real_smoke import require, write_json
-
-SOURCE_ROOTS = {"arma4os", "benchmarks", "crates", "configs", "schemas", "hooks", "tests", "scripts", "docs", ".github"}
-SOURCE_FILES = {"Makefile", "Cargo.toml", "Cargo.lock", "pyproject.toml", "README.md", "AGENTS.md", "LICENSE", ".gitignore"}
-SOURCE_SUFFIXES = {".py", ".rs", ".toml", ".lock", ".json", ".c", ".h", ".md", ".yaml", ".yml", ".sh"}
-EXCLUDED_PARTS = {"target", "build", "results", "__pycache__", ".git", ".venv", "node_modules"}
-SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
-               "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3"]
-
-
-def source_files(root: Path) -> list[Path]:
-    names = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root)
-    selected = []
-    for raw in names.split(b"\0"):
-        if not raw:
-            continue
-        relative = Path(os.fsdecode(raw))
-        if relative.is_absolute() or ".." in relative.parts or EXCLUDED_PARTS.intersection(relative.parts):
-            continue
-        if relative.as_posix() not in SOURCE_FILES and not (
-                relative.parts[0] in SOURCE_ROOTS and relative.suffix in SOURCE_SUFFIXES):
-            continue
-        path = root / relative
-        require(not any(p.is_symlink() for p in [path, *path.parents] if p != root.parent),
-                f"Source symlink is not supported: {relative}")
-        if path.is_file():
-            selected.append(relative)
-    require(Path("benchmarks/vm_smoke.py") in selected, "Remote harness missing from source snapshot")
-    return sorted(set(selected))
-
-
-def snapshot(root: Path, archive: Path) -> dict:
-    # Hash and archive the same bytes even if an editor saves during packing.
-    metadata = {"source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
-                "working_tree": subprocess.check_output(["git", "status", "--short"], cwd=root, text=True),
-                "files": {}}
-    with tarfile.open(archive, "w:gz") as tar:
-        for name in source_files(root):
-            data = (root / name).read_bytes()
-            metadata["files"][name.as_posix()] = hashlib.sha256(data).hexdigest()
-            entry = tarfile.TarInfo(name.as_posix())
-            entry.size = len(data)
-            entry.mode = (root / name).stat().st_mode & 0o777
-            tar.addfile(entry, io.BytesIO(data))
-        data = (json.dumps(metadata, indent=2) + "\n").encode()
-        entry = tarfile.TarInfo("deployment-source.json")
-        entry.size = len(data)
-        tar.addfile(entry, io.BytesIO(data))
-    return metadata
-
-
-def extract_files(archive: Path, destination: Path) -> None:
-    """Only regular files and directories; reject links and path traversal."""
-    with tarfile.open(archive) as tar:
-        seen = set()
-        for entry in tar.getmembers():
-            path = PurePosixPath(entry.name)
-            require(not path.is_absolute() and ".." not in path.parts and entry.name not in seen and
-                    (entry.isfile() or entry.isdir()), f"Unsafe archive entry: {entry.name}")
-            seen.add(entry.name)
-        for entry in tar.getmembers():
-            target = destination / entry.name
-            require(not any(p.is_symlink() for p in [target, *target.parents]), "Archive destination contains a symlink")
-            if entry.isdir():
-                target.mkdir(parents=True, exist_ok=True)
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with tar.extractfile(entry) as source, target.open("xb") as output:
-                    shutil.copyfileobj(source, output)
-
-
-def powershell_command(program: str, args: list[str]) -> list[str]:
-    quote = lambda value: "'" + value.replace("'", "''") + "'"
-    script = "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); & " + program + " " + " ".join(map(quote, args)) + "; exit $LASTEXITCODE"
-    return ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-            base64.b64encode(script.encode("utf-16-le")).decode()]
-
-
-class Connection:
-    def __init__(self, host: str, transport: str):
-        self.host = host
-        self.transport = ("windows" if os.environ.get("WSL_DISTRO_NAME") and shutil.which("powershell.exe") else "native") if transport == "auto" else transport
-
-    def command(self, program: str, args: list[str]) -> list[str]:
-        return powershell_command(program, args) if self.transport == "windows" else [program, *args]
-
-    def ssh(self, command: str) -> list[str]:
-        return self.command("ssh", [*SSH_OPTIONS, self.host, command])
-
-    def local_path(self, path: Path) -> str:
-        if self.transport == "windows":
-            return subprocess.check_output(["wslpath", "-w", str(path.resolve())], text=True).strip()
-        return str(path.resolve())
-
-    def copy(self, local: Path, remote: str, upload: bool) -> list[str]:
-        pair = [self.local_path(local), self.host + ":" + remote]
-        return self.command("scp", [*SSH_OPTIONS, *(pair if upload else pair[::-1])])
-
+from benchmarks.deployment._support import require, write_json
+from benchmarks.deployment.snapshot import BOOTSTRAP, extract_files, snapshot
+from benchmarks.deployment.transport import Connection
 
 def execute(command: list[str], output: Path, name: str, timeout: float) -> int:
     with (output / (name + ".stdout")).open("wb") as stdout, (output / (name + ".stderr")).open("wb") as stderr:
@@ -124,26 +26,6 @@ def execute(command: list[str], output: Path, name: str, timeout: float) -> int:
     for suffix, stream in [("stdout", sys.stdout), ("stderr", sys.stderr)]:
         print((output / (name + "." + suffix)).read_text(errors="replace"), end="", file=stream, flush=True)
     return result.returncode
-
-
-# This short bootstrap is sent through SSH before the harness is installed.
-BOOTSTRAP = r'''
-import hashlib,json,pathlib,tarfile
-archive=pathlib.Path(ARCHIVE)
-if hashlib.sha256(archive.read_bytes()).hexdigest()!=DIGEST:raise RuntimeError("Source archive hash mismatch")
-root=pathlib.Path(DESTINATION);root.mkdir(parents=True,exist_ok=False)
-with tarfile.open(archive) as t:
- for e in t.getmembers():
-  p=pathlib.PurePosixPath(e.name)
-  if p.is_absolute() or ".." in p.parts or not e.isfile():raise RuntimeError("Unsafe source archive")
-  dest=root/e.name;dest.parent.mkdir(parents=True,exist_ok=True)
-  with t.extractfile(e) as src,dest.open("xb") as out:out.write(src.read())
-meta=json.loads((root/"deployment-source.json").read_text())
-for name,digest in meta["files"].items():
- if hashlib.sha256((root/name).read_bytes()).hexdigest()!=digest:raise RuntimeError("Source file mismatch: "+name)
-print("Verified source files:",len(meta["files"]))
-'''
-
 
 def guest_run(args: argparse.Namespace) -> int:
     """Executed inside the fresh guest checkout; bound the job even after SSH loss."""
@@ -185,7 +67,6 @@ def guest_run(args: argparse.Namespace) -> int:
     print(json.dumps(report), flush=True)
     return 0 if report["ok"] else 1
 
-
 def run_vm(args: argparse.Namespace) -> int:
     require(bool(re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@-]*", args.host)), "Invalid SSH host")
     for value in (args.remote_root, args.scheduler):
@@ -216,7 +97,7 @@ def run_vm(args: argparse.Namespace) -> int:
         encoded = base64.b64encode(bootstrap.encode()).decode()
         require(step("deploy", connection.ssh(
             "printf %s " + encoded + " | base64 -d | python3")) == 0, "Source deployment failed")
-        command = ["python3", "-m", "benchmarks.vm_smoke", "--guest-run", "--scheduler", args.scheduler,
+        command = ["python3", "-m", "benchmarks.deployment.vm", "--guest-run", "--scheduler", args.scheduler,
                    "--repeats", str(args.repeats), "--seed", str(args.seed), "--timeout", str(args.timeout)]
         remote_command = "cd " + shlex.quote(remote_dir) + " && " + shlex.join(command)
         try:
@@ -242,7 +123,6 @@ def run_vm(args: argparse.Namespace) -> int:
         write_json(output / "vm-result.json", report)
     print(f"VM test {'PASSED' if report['ok'] else 'FAILED'}: {output}", flush=True)
     return 0 if report["ok"] else 1
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
