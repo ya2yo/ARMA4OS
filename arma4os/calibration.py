@@ -17,7 +17,7 @@ from .registry import PolicyRegistry
 
 
 def build_registry(run_dir: Path, context: dict, validity_hours: float = 24) -> dict:
-    from benchmarks.summary import reconstruct_summary
+    from benchmarks.reporting.reconstruction import reconstruct_summary
 
     if validity_hours <= 0 or validity_hours > 24 * 30:
         raise ValueError("validity_hours must be in (0, 720]")

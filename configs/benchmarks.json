@@ -13,7 +13,7 @@
       "command": [
         "python3",
         "-m",
-        "benchmarks.workloads.compression",
+        "benchmarks.execution.workloads.compression",
         "--size-kb",
         "1024",
         "--iterations",

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "policies": ["default"],
+  "timeout_sec": 300,
+  "warmup": 1,
+  "description": "FFmpeg 1080p video transcoding workload for CPU scheduling evaluation",
+  "workloads": [
+    {
+      "name": "ffmpeg_transcode_1080p",
+      "command": [
+        "python3",
+        "-m",
+        "benchmarks.execution.workloads.ffmpeg",
+        "--input",
+        "/srv/bench/media/bbb_sample.mp4",
+        "--codec",
+        "libx264",
+        "--preset",
+        "medium"
+      ],
+      "parser": "ffmpeg",
+      "timeout_sec": 300.0,
+      "warmup": 1
+    }
+  ]
+}

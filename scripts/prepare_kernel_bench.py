@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from benchmarks.vm_smoke import Connection, SSH_OPTIONS
+from benchmarks.deployment.transport import Connection, SSH_OPTIONS
 
 DEFAULT_HOST = "root@192.168.66.128"
 DEFAULT_DEST_ROOT = "/srv/bench"

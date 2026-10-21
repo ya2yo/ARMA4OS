@@ -23,22 +23,25 @@ import tempfile
 import time
 import unittest
 
-from benchmarks.cli import main, run_benchmark, summarize_run
-from benchmarks.config import BenchmarkConfig, WorkloadConfig, load_config
-from benchmarks.executor_client import ExecutorClient, ExecutorError
-from benchmarks.manifest import generate_manifest
-from benchmarks.matrix import generate_trial_plan
-from benchmarks.parsers import ParseError, get_parser
-from benchmarks.parsers.elapsed import ElapsedParser
-from benchmarks.parsers.schbench import SchbenchParser
-from benchmarks.runner import is_process_group_alive, kill_process_group, run_trial
-from benchmarks.summary import (
+from benchmarks.cli import main, summarize_run
+from benchmarks.orchestration.engine import run_benchmark
+from benchmarks.orchestration.models import BenchmarkConfig, WorkloadConfig
+from benchmarks.orchestration.config import load_config
+from benchmarks.execution.executor import ExecutorClient, ExecutorError
+from benchmarks.evidence.manifest import generate_manifest
+from benchmarks.orchestration.matrix import generate_trial_plan
+from benchmarks.evidence.parsers import ParseError, get_parser
+from benchmarks.evidence.parsers.elapsed import ElapsedParser
+from benchmarks.evidence.parsers.schbench import SchbenchParser
+from benchmarks.execution.processes import is_process_group_alive, kill_process_group
+from benchmarks.execution.trial import run_trial
+from benchmarks.reporting.reconstruction import reconstruct_summary
+from benchmarks.reporting.statistics import (
     calculate_ci_95,
     calculate_sample_std,
     generate_summary,
-    reconstruct_summary,
 )
-from benchmarks.workloads.compression import (
+from benchmarks.execution.workloads.compression.workload import (
     generate_deterministic_payload,
     run_compression_workload,
 )
@@ -279,7 +282,7 @@ class TestConfigAndValidation(unittest.TestCase):
         self.assertGreaterEqual(len(cfg.workloads), 1)
 
     def test_validate_examples_schbench_json(self) -> None:
-        cfg = load_config("benchmarks/examples/benchmarks_schbench.json")
+        cfg = load_config("configs/benchmarks.schbench.example.json")
         self.assertEqual(cfg.policies, ["default"])
         self.assertEqual(cfg.workloads[0].parser, "schbench")
 
@@ -1044,14 +1047,14 @@ class TestEndToEndBenchmarkRun(unittest.TestCase):
 
     def test_probe_binary_version_never_reports_stderr(self) -> None:
         """Never report unknown --version stderr error as a real version."""
-        from benchmarks.manifest import probe_binary_version
+        from benchmarks.evidence.manifest import probe_binary_version
         cmd = [sys.executable, "-c", "import sys; sys.stderr.write('error: unknown option --version\\n'); sys.exit(1)"]
         ver = probe_binary_version(cmd)
         self.assertIsNone(ver)
 
     def test_bounded_file_read_rejects_oversized_file(self) -> None:
         """Bounded memory reading rejects files exceeding cap with ParseError."""
-        from benchmarks.runner import read_bounded_file
+        from benchmarks.evidence.files import read_bounded_file
         oversized = Path(self.temp_dir) / "oversized.log"
         # Test with a smaller cap
         oversized.write_text("A" * 1024, encoding="utf-8")

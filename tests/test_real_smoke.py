@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from benchmarks import real_smoke
-from benchmarks.cli import run_benchmark
+from benchmarks.deployment import checks as real_smoke
+from benchmarks.orchestration.engine import run_benchmark
 
 
 class RealSmokeTests(unittest.TestCase):
@@ -50,7 +50,7 @@ class RealSmokeTests(unittest.TestCase):
             "workloads": [{"name": "smoke", "command": ["/bin/echo", "{}"],
                            "parser": "elapsed", "warmup": 1}]}))
         run = self.root / "matrix"
-        with patch("benchmarks.cli.verify_kernel_sched_ext_state", return_value="kernel-default"), \
+        with patch("benchmarks.orchestration.engine.verify_kernel_sched_ext_state", return_value="kernel-default"), \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_benchmark(str(config), str(run), repeats=2), 0)
         # Label one formal trial as the second policy for harness verification.

@@ -27,7 +27,7 @@ class CalibrationTests(unittest.TestCase):
         self.temp.cleanup()
 
     def build(self):
-        with patch("benchmarks.summary.reconstruct_summary", return_value={"groups": [self.group]}):
+        with patch("benchmarks.reporting.reconstruction.reconstruct_summary", return_value={"groups": [self.group]}):
             return build_registry(self.root, self.context)
 
     def test_simulated_matrix_retains_synthetic_marker(self):

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "policies": ["default"],
+  "timeout_sec": 7200,
+  "kernel": {
+    "source": "/srv/bench/linux-6.14",
+    "config": "/srv/bench/kernel.config",
+    "jobs": 4,
+    "make": "/usr/bin/make"
+  },
+  "schbench": {
+    "binary": "/usr/local/bin/schbench",
+    "args": ["-m", "2", "-t", "4"],
+    "runtime_sec": 30
+  },
+  "mixed": {
+    "min_overlap_fraction": 0.9
+  }
+}

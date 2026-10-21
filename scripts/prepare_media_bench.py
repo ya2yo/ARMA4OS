@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from benchmarks.vm_smoke import Connection
+from benchmarks.deployment.transport import Connection
 
 DEFAULT_HOST = "root@192.168.66.128"
 DEFAULT_DEST_ROOT = "/srv/bench/media"
@@ -113,7 +113,7 @@ def generate_ffmpeg_config(
                 "command": [
                     sys.executable,
                     "-m",
-                    "benchmarks.workloads.ffmpeg_transcode",
+                    "benchmarks.execution.workloads.ffmpeg",
                     "--input",
                     input_video_path,
                     "--codec",

@@ -15,7 +15,9 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from benchmarks import vm_smoke
+from benchmarks.deployment import snapshot as vm_snapshot
+from benchmarks.deployment import transport
+from benchmarks.deployment import vm as vm_smoke
 
 
 class VmSmokeTests(unittest.TestCase):
@@ -26,20 +28,20 @@ class VmSmokeTests(unittest.TestCase):
 
     def test_snapshot_includes_uncommitted_source_excludes_results_and_secrets(self):
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        for name in ["benchmarks/vm_smoke.py", "arma4os/new.py", "Makefile",
+        for name in ["benchmarks/deployment/vm.py", "arma4os/new.py", "Makefile",
                      "results/secret.json", ".env", "configs/key.pem", "benchmarks/__pycache__/x.py"]:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("original")
         original_check_output = subprocess.check_output
-        with patch("benchmarks.vm_smoke.subprocess.check_output") as command:
+        with patch("benchmarks.deployment.snapshot.subprocess.check_output") as command:
             # Empty fixture repo has no HEAD; source discovery still uses actual Git.
             def output(argv, **kwargs):
                 return "fixture-commit\n" if argv[1:3] == ["rev-parse", "HEAD"] else original_check_output(argv, **kwargs)
             command.side_effect = output
             archive = self.root / "source.tar.gz"
-            meta = vm_smoke.snapshot(self.root, archive)
-        self.assertEqual(set(meta["files"]), {"Makefile", "arma4os/new.py", "benchmarks/vm_smoke.py"})
+            meta = vm_snapshot.snapshot(self.root, archive)
+        self.assertEqual(set(meta["files"]), {"Makefile", "arma4os/new.py", "benchmarks/deployment/vm.py"})
         (self.root / "arma4os/new.py").write_text("changed later")
         with tarfile.open(archive) as tar:
             data = tar.extractfile("arma4os/new.py").read()
@@ -55,12 +57,12 @@ class VmSmokeTests(unittest.TestCase):
                 entry.linkname = "/etc/passwd"
                 tar.addfile(entry)
             with self.assertRaisesRegex(RuntimeError, "Unsafe archive"):
-                vm_smoke.extract_files(archive, self.root / "extracted")
+                vm_snapshot.extract_files(archive, self.root / "extracted")
         self.assertFalse((self.root / "escape").exists())
 
     def test_windows_quoting_keeps_arguments_literal(self):
         value = "a'; $(unexpected) `command`"
-        argv = vm_smoke.powershell_command("ssh", [value])
+        argv = transport.powershell_command("ssh", [value])
         script = base64.b64decode(argv[-1]).decode("utf-16-le")
         self.assertTrue(script.startswith("$ErrorActionPreference='Stop';"))
         self.assertIn("'a''; $(unexpected) `command`'", script)
@@ -73,6 +75,8 @@ class VmSmokeTests(unittest.TestCase):
         steps = []
         def execute(command, output, name, timeout):
             steps.append(name)
+            if name == "test":
+                self.assertIn("python3 -m benchmarks.deployment.vm --guest-run", command[-1])
             if name == "download":
                 with tarfile.open(output / "evidence.tar.gz", "w:gz") as tar:
                     data = json.dumps({"ok": False, "returncode": 2}).encode()

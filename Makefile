@@ -25,7 +25,7 @@ help:
 	@echo "make setup-vm-media   SSH -> setup media video assets & FFmpeg on guest"
 
 test-vm:
-	$(PYTHON) -m benchmarks.vm_smoke --host "$(VM_HOST)" --transport "$(VM_TRANSPORT)" \
+	$(PYTHON) -m benchmarks.deployment.vm --host "$(VM_HOST)" --transport "$(VM_TRANSPORT)" \
 	  --remote-root "$(VM_ROOT)" --scheduler "$(SCX_SIMPLE)" \
 	  --repeats "$(REAL_REPEATS)" --seed "$(REAL_SEED)" --timeout "$(VM_TIMEOUT)" $(if $(VM_OUTPUT),--output "$(VM_OUTPUT)")
 
@@ -42,12 +42,12 @@ build-release:
 	cargo build --workspace --release --locked
 
 test-real-check:
-	$(PYTHON) -m benchmarks.real_smoke --check-only --scheduler "$(SCX_SIMPLE)"
+	$(PYTHON) -m benchmarks.deployment.checks --check-only --scheduler "$(SCX_SIMPLE)"
 
 test-real:
-	$(PYTHON) -m benchmarks.real_smoke --check-only --scheduler "$(SCX_SIMPLE)"
+	$(PYTHON) -m benchmarks.deployment.checks --check-only --scheduler "$(SCX_SIMPLE)"
 	$(MAKE) build-release
-	$(PYTHON) -m benchmarks.real_smoke --scheduler "$(SCX_SIMPLE)" \
+	$(PYTHON) -m benchmarks.deployment.checks --scheduler "$(SCX_SIMPLE)" \
 	  --executor ./target/release/arma-executor --repeats "$(REAL_REPEATS)" \
 	  --seed "$(REAL_SEED)" $(if $(REAL_OUTPUT),--output "$(REAL_OUTPUT)")
 
