@@ -1,4 +1,4 @@
-.PHONY: check test demo build build-release help test-real-check test-real test-vm
+.PHONY: check test demo build build-release help test-real-check test-real test-vm setup-vm-bench setup-vm-media clean
 .DEFAULT_GOAL := build
 
 PYTHON ?= python3
@@ -21,11 +21,19 @@ help:
 	@echo "make test-vm          SSH -> sync source -> guest test-real -> download results"
 	@echo "  VM_HOST=root@192.168.66.128 VM_TRANSPORT=auto|windows|native"
 	@echo "  VM_ROOT=/root/arma4os-vm-tests VM_OUTPUT=results/new-vm-run"
+	@echo "make setup-vm-bench   SSH -> setup Linux kernel source & tools on guest"
+	@echo "make setup-vm-media   SSH -> setup media video assets & FFmpeg on guest"
 
 test-vm:
 	$(PYTHON) -m benchmarks.vm_smoke --host "$(VM_HOST)" --transport "$(VM_TRANSPORT)" \
 	  --remote-root "$(VM_ROOT)" --scheduler "$(SCX_SIMPLE)" \
 	  --repeats "$(REAL_REPEATS)" --seed "$(REAL_SEED)" --timeout "$(VM_TIMEOUT)" $(if $(VM_OUTPUT),--output "$(VM_OUTPUT)")
+
+setup-vm-bench:
+	$(PYTHON) scripts/prepare_kernel_bench.py --host "$(VM_HOST)" --transport "$(VM_TRANSPORT)"
+
+setup-vm-media:
+	$(PYTHON) scripts/prepare_media_bench.py --host "$(VM_HOST)" --transport "$(VM_TRANSPORT)"
 
 build:
 	cargo build --workspace --locked
@@ -54,3 +62,8 @@ check:
 
 demo:
 	python3 -m arma4os demo
+
+clean:
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.py[cod]" -delete 2>/dev/null || true
+	rm -rf .pytest_cache
