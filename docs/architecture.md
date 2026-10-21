@@ -35,6 +35,8 @@ flowchart TD
 - `hooks.py` / `bpf_hook.py`：统一 attach / detach / stats。CPU weight 操作只面向配置授权的 cgroup，保存原值并检测外部修改；可选 eBPF ingress hook 统计且始终放行。
 - `calibration.py`：从原始实验重建汇总，拒绝失败组、样本不足、单位不符和缺少区间的成绩，生成需复核的策略库草案。上下文范围、目标映射和切换成本仍需独立测量并确认。
 
+`benchmarks/` 按实验编排（`orchestration`）、负载执行（`execution`）、证据处理（`evidence`）、统计报告（`reporting`）、远程部署（`deployment`）五个模块组织。formal 实验套件集中在 `orchestration/formal/`；运行和离线重建共用证据解析入口，报告模块不依赖执行模块。详细目录、依赖约束与命令入口见 [benchmarks 模块结构](../benchmarks/README.md)。
+
 ## 论文思想的落点
 
 | 参考方法 | 本项目落点 | 当前界限 |

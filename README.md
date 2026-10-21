@@ -58,8 +58,8 @@
 
 ### 参考资料
 
-- 智能调度前沿：[Towards Agentic OS: An LLM Agent Framework for Linux Schedulers](https://mp.weixin.qq.com/s/ewC8gTMRvm2NO6ywoproAA)
-- 专家路由模型：[Mixture-of-Schedulers: An Adaptive Scheduling Agent as a Learned Router for Expert Policies](https://github.com/sched-ext/scx)
+- 智能调度前沿：[Towards Agentic OS: An LLM Agent Framework for Linux Schedulers (arXiv:2509.01245)](https://arxiv.org/abs/2509.01245)
+- 专家路由模型：[Mixture-of-Schedulers: An Adaptive Scheduling Agent as a Learned Router for Expert Policies (arXiv:2511.11628)](https://arxiv.org/abs/2511.11628)
 - 上游调度仓库：[sched-ext/scx (Linux sched_ext BPF Schedulers)](https://github.com/sched-ext/scx)
 
 ---
@@ -98,7 +98,54 @@ cargo test --workspace --locked
 
 > **注意**：`demo` 输出的观测数据、专家评分与性能退化均为**合成数据 (Synthetic Data)**，用于验证协议格式、决策路由与异常回滚流程，不代表真实内核性能优化收益。
 
-### 2. 在线模式与 Tool / Skill 交互
+### 2. 真实基准测试工作负载（Benchmarks）
+
+ARMA4OS 支持四大真实工作负载及并发混部评测，覆盖 CPU 吞吐、线程调度尾延迟与多媒体流水线：
+
+| 工作负载 | 核心测试内容 | 评价指标 | 配置文件 / 准备脚本 | 执行命令入口 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`kernel_build`** | Linux 内核源码多核并行构建 | 编译耗时 (`compile_time_s`) | `configs/benchmarks.formal.example.json`<br>`scripts/prepare_kernel_bench.py` | `CCACHE_DISABLE=1 python3 -m benchmarks formal --config <cfg> --output <dir> --scenarios kernel_build` |
+| **`schbench`** | 模拟高并发工作线程唤醒与抢占 | p99 唤醒尾延迟 (`p99`)、吞吐 (`rps`) | `configs/benchmarks.formal.example.json`<br>`scripts/prepare_kernel_bench.py` | `python3 -m benchmarks formal --config <cfg> --output <dir> --scenarios schbench` |
+| **`mixed`** | `kernel_build`（后台吞吐）与 `schbench`（前台延迟）**高压混部** | 编译耗时 + p99 延迟 + 有效重叠率 | `configs/benchmarks.formal.example.json`<br>`scripts/prepare_kernel_bench.py` | `CCACHE_DISABLE=1 python3 -m benchmarks formal --config <cfg> --output <dir> --scenarios mixed` |
+| **`ffmpeg`** | 1080p 高清视频转码 (H.264) | 转码帧率 (`fps`)、转码倍速 (`speed`) | `configs/benchmarks.ffmpeg.example.json`<br>`scripts/prepare_media_bench.py` | `python3 -m benchmarks run --config <cfg> --output <dir>` |
+| **`compression`** | 内存数据多算法压缩 (zlib/bz2/lzma) | 压缩吞吐 (`throughput_mb_s`)、耗时 | `configs/benchmarks.json`（自带） | `python3 -m benchmarks run --config configs/benchmarks.json --output <dir>` |
+
+#### 快速运行内核与调度延迟基准测试（kernel_build / schbench / mixed）
+
+```bash
+# 1. 远端客机一键准备内核源码、配置与 schbench 工具链（仅需运行一次）
+make setup-vm-bench
+
+# 2. 执行正式基准测试（默认并发测试 kernel_build, schbench, mixed）
+CCACHE_DISABLE=1 python3 -m benchmarks formal \
+  --config configs/benchmarks.formal.local.json \
+  --output results/formal-run-001 \
+  --scenarios kernel_build schbench mixed \
+  --repeats 5 --warmup 1 --seed 42
+
+# 3. 重建并查看统计摘要
+python3 -m benchmarks summarize results/formal-run-001
+```
+
+#### 快速运行 FFmpeg 视频转码基准测试
+
+```bash
+# 1. 远端客机一键准备视频素材与 FFmpeg 工具（仅需运行一次）
+make setup-vm-media
+
+# 2. 执行视频转码基准测试
+python3 -m benchmarks run \
+  --config configs/benchmarks.ffmpeg.local.json \
+  --output results/ffmpeg-run-001 \
+  --repeats 5 --seed 42
+
+# 3. 重建并查看统计摘要
+python3 -m benchmarks summarize results/ffmpeg-run-001
+```
+
+每次基准测试均使用全新的输出目录，完整保留原始运行日志、配置快照与指标证据；混部重叠不足、超时和失败均显式记录。
+
+### 3. 在线模式与 Tool / Skill 交互
 
 ```bash
 # 无特权只读监控（初始策略库为空且目标过期时，会详细解释保持默认的原因）
@@ -112,7 +159,7 @@ python3 -m arma4os tools
 python3 -m arma4os skill mixed_workload_tuning --dry-run
 ```
 
-### 3. 真实内核调度执行
+### 4. 真实内核调度执行
 
 从当前开发机一条命令连接已启动的 VMware openEuler、同步源码、运行真实测试并取回结果：
 
@@ -160,7 +207,7 @@ python3 -m arma4os run --executor ./target/release/arma-executor \
 | :--- | :--- |
 | `arma4os/` | Python 控制面：版本化合同、指标采集、画像分析、策略库、决策路由、反馈评价、Tool / Skill、审计与 CLI 入口 |
 | `crates/arma-executor/` | Rust 执行面：JSONL 协议处理、策略白名单机制、单例互斥锁、sysfs 核验、超时管控与自动恢复 |
-| `benchmarks/` | 固定基准负载、指标解析器、串行随机执行矩阵、原始指标记录与汇总分析器 |
+| `benchmarks/` | [实验编排、负载执行、证据处理、统计报告、远程部署](benchmarks/README.md)五个模块 |
 | `configs/` | 执行器环境定义、优化目标模板、策略路由器、基准测试矩阵与 hook 的标准配置 |
 | `hooks/` | 扩展 eBPF 观测与管控探针（如 `cgroup_skb` hook）源码 |
 | `tests/` | Python 决策逻辑、恢复机制、权限范围及基准实验回归测试用例 |
